@@ -35,5 +35,47 @@ Please first fork and clone RouteLLM in order to use following files
 - RouterModel.ipynb: This file is used in get route performance under different user-preference parameter β(alpha in code)
 - Eval.ipynb: This file is used to generate the Result for NIR model which presented in paper 
 
+## Project Structure Overview
+
+```
+AR-LLM/
+├── utils/                           # Utility modules
+│   ├── __init__.py
+│   ├── model.py                     # Model definitions (BERTBinaryClassifier, MultiClassClassifier, RouterNN)
+│   └── utils.py                     # Dataset classes, data loading, and checkpoint utilities
+│
+├── data/                            # Data directories (download from Google Drive link below)
+│   ├── model_data/                  # Model performance data, query difficulty, extracted samples
+│   ├── feature_vectors/             # Generated query feature vectors (ID/OOD)
+│   └── baseline_scores/             # Baseline router scores (BERT, MF, etc.)
+│
+├── model_checkpoints/               # Trained model checkpoints (download from Google Drive)
+│   ├── embeddinggemma_multi_class_classifier/
+│   ├── embeddinggemma_difficulty_predictor/
+│   └── best_router_model.pth
+│
+├── Data Preparation Scripts
+│   ├── calculate_query_difficulty.py        # Calculate query difficulty scores
+│   ├── extract_openllm_leaderboard_data.py # Extract model performance from Open LLM leaderboard
+│   └── extract_dataset_samples.py         # Generate ID and OOD datasets
+│
+├── Query & Model Vector Generation
+│   ├── predict_feature_vectors.py           # Generate query feature vectors
+│   ├── train.py                             # Train EmbeddingGemma for query vectors
+│   └── update_models_info.py                # Generate model feature vectors
+│
+├── Routing Methods
+│   ├── multi_router.py                      # Heuristic Difficulty Penalty (HDP) router
+│   ├── NIR_Prediction.py                     # Neural Interaction Router (NIR) prediction
+│   ├── routellm_baseline.py                  # RouteLLM baseline implementation
+│   └── binary_router.py                     # Binary routing analysis and comparison
+│
+└── Notebooks/                        # Jupyter notebooks for training and evaluation
+    ├── train.ipynb                   # Query vector generation training process
+    ├── router.ipynb                  # NIR model training
+    ├── RouterModel.ipynb             # Router performance evaluation across β values
+    ├── NIR_DEMO.ipynb                # NIR prediction demonstration
+    └── Eval.ipynb                    # Final evaluation and comparison with baselines
+```
 
 ### Due to storage limitation in Github, all data, model checkpoint and other large files can be found [here](https://drive.google.com/drive/folders/1HttlWgavhk9H8aLXzzlk7g1XlcSL4nN4?usp=drive_link)
