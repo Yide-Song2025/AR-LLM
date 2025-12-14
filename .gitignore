@@ -1,0 +1,5 @@
+all_alpha_model_ID.csv
+model_checkpoints/
+Temp/
+archive/
+data/
