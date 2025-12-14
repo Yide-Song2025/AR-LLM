@@ -3,3 +3,7 @@ model_checkpoints/
 Temp/
 archive/
 data/
+
+*.csv
+*.jsonl
+*.pth
