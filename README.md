@@ -1,6 +1,8 @@
 # Adaptive Routing for Specialized Large Language Models
 ## This repo contains the code for paper "Adaptive Routing for Specialized Large Language Models"
 
+![Architecture](Architecture.jpg)
+
 ### Baseline
 We use Route_LLM(https://github.com/lm-sys/RouteLLM) as our baseline 
 Please first fork and clone RouteLLM in order to use following files
