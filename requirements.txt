@@ -1,0 +1,12 @@
+torch>=2.6
+transformers
+torchvision
+torchaudio
+datasets
+huggingface_hub
+numpy
+pandas
+scikit-learn
+matplotlib
+tqdm
+openai

@@ -226,11 +226,15 @@ def main():
         default="cuda" if torch.cuda.is_available() else "cpu",
     )
     args = parser.parse_args()
+    
+    from huggingface_hub import login
+    login()
 
     print(f"Device: {args.device}")
     print(f"Loading tokenizer & model: {args.model_name} ...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, trust_remote_code=True)
     encoder = AutoModel.from_pretrained(args.model_name, trust_remote_code=True)
+    # encoder = AutoModel.from_pretrained(args.model_name, trust_remote_code=True, attn_implementation="eager")
     encoder = encoder.to(args.device).eval()
 
     # --- Query embeddings ---
