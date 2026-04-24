@@ -55,7 +55,7 @@ MAX_WORKERS = 32
 # ----------------------------------------------------------------------
 openrouter_client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key="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",
+    api_key="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",
 )
 
 deepseek_client = OpenAI(
@@ -359,11 +359,11 @@ def process_teleqna(items: List[Dict], model: str, desc: str, verbose: bool = Fa
     return results
 
 
-def process_telequad(items: List[Dict], model: str, verbose: bool = False, save_every: int = 10) -> List[Dict]:
+def process_telequad(indexed_items: List[Tuple[int, Dict]], model: str, verbose: bool = False, save_every: int = 10) -> List[Dict]:
     """Evaluate TeleQuAD items in parallel, saving incrementally every `save_every` results."""
     results: List[Dict] = []
     pending: List[Dict] = []
-    args_list = [(item, model, idx, verbose) for idx, item in enumerate(items)]
+    args_list = [(item, model, idx, verbose) for idx, item in indexed_items]
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(_telequad_worker, args): args for args in args_list}
         for future in tqdm(as_completed(futures), total=len(futures), desc="  TeleQuAD", leave=False):
@@ -558,7 +558,7 @@ def main():
 
         # TeleQuAD
         cached_ids = cache.get(canonical, {})
-        uncached_items = [
+        uncached_items: List[Tuple[int, Dict]] = [
             (idx, item) for idx, item in enumerate(telequad_items)
             if f"telequad_{idx}" not in cached_ids
         ]
@@ -566,8 +566,7 @@ def main():
         if cached_here > 0:
             print(f"  [CACHE HIT] {cached_here}/{len(telequad_items)} TeleQuAD items already cached — skipping.")
         if uncached_items:
-            items_to_eval = [item for _, item in uncached_items]
-            results = process_telequad(items_to_eval, model, verbose=args.test)
+            results = process_telequad(uncached_items, model, verbose=args.test)
             for r in results:
                 r["model"] = canonical
             append_results(OUT_TELEQUAD, results)
@@ -582,11 +581,16 @@ def main():
         cache = load_cache()
         rebuild_outputs_from_cache(cache, processed_models)
 
-    # Delete temporary cache file
-    cache_path = Path(CACHE_FILE)
-    if cache_path.exists():
-        cache_path.unlink()
-        print(f"\n  Deleted temporary cache: {CACHE_FILE}")
+        # Compact cache file to remove duplicates
+        cache_path = Path(CACHE_FILE)
+        all_entries: List[Dict] = []
+        for model_data in cache.values():
+            all_entries.extend(model_data.values())
+        all_entries.sort(key=lambda r: (r["model"], r["query_id"]))
+        with open(cache_path, "w", encoding="utf-8") as f:
+            for r in all_entries:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        print(f"\n  Compacted cache: {len(all_entries)} unique entries → {CACHE_FILE}")
 
     print(f"\n{'=' * 70}")
     print("Done! Results written to:")
