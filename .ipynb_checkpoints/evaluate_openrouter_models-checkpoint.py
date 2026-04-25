@@ -15,12 +15,12 @@ from datasets import load_dataset
 OPENROUTER_TO_MODELS_INFO = {
     # "maziyarpanahi/calme-3.2-instruct-78b": "MaziyarPanahi/calme-3.2-instruct-78b",
     # "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
-    # "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
-    # "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
-    # "qwen/qwen2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
-    # "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
-    # "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    # "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
+    "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
+    "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
+    "qwen/qwen-2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
+    "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
+    "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
+    "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
     # "meta-llama/llama-3.1-70b-instruct": "meta-llama/Llama-3.1-70B-Instruct",
     # "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
     # "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
@@ -38,18 +38,17 @@ def canonical_model_name(openrouter_model: str) -> str:
     """Return the models_info key, falling back to the input name."""
     return OPENROUTER_TO_MODELS_INFO.get(openrouter_model, openrouter_model)
 
-root = 'data'
 # ----------------------------------------------------------------------
 # Output files
 # ----------------------------------------------------------------------
-OUT_TELEQNA_ALL  = root + "/model_data/teleqna_openrouter_results.jsonl"
-OUT_TELEQNA_TEST = root + "/model_data/teleqna_test_openrouter_results.jsonl"
-OUT_TELEQUAD     = root + "/model_data/telequad_openrouter_results.jsonl"
+OUT_TELEQNA_ALL  = "data/model_data/teleqna_openrouter_results.jsonl"
+OUT_TELEQNA_TEST = "data/model_data/teleqna_test_openrouter_results.jsonl"
+OUT_TELEQUAD     = "data/model_data/telequad_openrouter_results.jsonl"
 
 # Temporary cache file for interrupt recovery
-CACHE_FILE = root + "/model_data/openrouter_eval_cache.jsonl"
+CACHE_FILE = "data/model_data/openrouter_eval_cache.jsonl"
 
-MAX_WORKERS = 16
+MAX_WORKERS = 32
 
 # ----------------------------------------------------------------------
 # API clients (defaults — can be overridden via --base-url / --api-key)
@@ -72,13 +71,13 @@ TELEQNA_TEMPLATE = """{question}
 
 {choices_formatted}
 
-Think concisely, then reply with just the answer inside \\boxed{{}}. Only the number inside the box, nothing else."""
+Reply with just the answer inside /box{{}}."""
 
 TELEQUAD_TEMPLATE = """Context: {context}
 
 Question: {question}
 
-Think concisely, then reply with just the answer inside \\boxed{{}}. Keep your answer brief and concise."""
+Reply with just the answer inside /box{{}}."""
 
 
 # ----------------------------------------------------------------------
@@ -86,7 +85,7 @@ Think concisely, then reply with just the answer inside \\boxed{{}}. Keep your a
 # ----------------------------------------------------------------------
 def extract_boxed_answer(text: str) -> Optional[str]:
     """Extract content inside /box{...} from model output."""
-    match = re.search(r'[/\\]box(?:ed)?\{([^}]*)\}', text)
+    match = re.search(r'/box\{([^}]*)\}', text)
     return match.group(1).strip() if match else None
 
 
@@ -98,7 +97,7 @@ def call_openrouter(model: str, prompt: str, max_retries: int = 1) -> Optional[s
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
-                max_tokens=2048,
+                max_tokens=256,
             )
             return response.choices[0].message.content
         except BadRequestError as e:
@@ -256,13 +255,12 @@ def evaluate_teleqna_item(item: Dict, model: str, verbose: bool = False) -> Opti
     query_id = f"teleqna_{item['split']}_{item['global_idx']}"
     ground_truth = choices[item["answer_idx"]]
 
-    boxed = extract_boxed_answer(response_text)
-
     if verbose:
         print(f"\n    [PROMPT]\n{prompt}")
         print(f"    [RESPONSE] {response_text}")
         print(f"    [GT] {ground_truth}")
-        print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
+
+    boxed = extract_boxed_answer(response_text)
 
     # Try matching: first as integer index, then as text
     correct = 0.0
@@ -303,22 +301,17 @@ def evaluate_telequad_item(item: Dict, model: str, idx: int, verbose: bool = Fal
         return None
 
     query_id = f"telequad_{idx}"
-    boxed = extract_boxed_answer(response_text)
 
     if verbose:
         print(f"\n    [PROMPT]\n{prompt}")
         print(f"    [RESPONSE] {response_text}")
         print(f"    [GT] {item['ref_answer']}")
-        print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
 
-    if boxed is not None:
-        response_for_judge = boxed
-    else:
-        parts = response_text.rsplit("</think>", 1)
-        response_for_judge = parts[-1] if len(parts) > 1 else response_text
+    boxed = extract_boxed_answer(response_text)
+    response_for_judge = boxed if boxed is not None else response_text
 
     # Judge with DeepSeek
-    correct = judge_with_deepseek(item["question"], item["ref_answer"], response_for_judge, verbose=verbose) if response_for_judge else 0
+    correct = judge_with_deepseek(item["question"], item["ref_answer"], response_for_judge, verbose=verbose)
 
     return {
         "query": item["question"],

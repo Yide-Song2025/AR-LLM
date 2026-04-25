@@ -6,7 +6,7 @@ set -euo pipefail
 PORT=8000
 HOST="0.0.0.0"
 TP_SIZE=1
-MAX_MODEL_LEN=4096
+MAX_MODEL_LEN=8192
 GPU_UTIL=0.90
 
 # Mapping: served-model-name (what the eval script sends) → HuggingFace model ID
@@ -18,7 +18,7 @@ declare -A MODEL_MAP=(
     ["qwen/qwen2.5-3b-instruct"]="Qwen/Qwen2.5-3B-Instruct"
     ["qwen/qwen2.5-1.5b-instruct"]="Qwen/Qwen2.5-1.5B-Instruct"
     ["qwen/qwen2.5-0.5b-instruct"]="Qwen/Qwen2.5-0.5B-Instruct"
-    ["deepsseek/deepseek-r1-distill-qwen-14b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+    ["deepseek/deepseek-r1-distill-qwen-14b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
     ["deepseek/deepseek-r1-distill-qwen-32b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
     ["deepseek/deepseek-r1-distill-qwen-7b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
 )
