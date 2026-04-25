@@ -9,7 +9,7 @@ print("=" * 80)
 query_model_answers = defaultdict(lambda: defaultdict(list))
 query_info = {}
 
-input_file = Path('data/model_data/extracted_dataset_samples.jsonl')
+input_file = Path('data/model_data/extracted_dataset_samples_new.jsonl')
 
 print("\nReading data and handling duplicates...")
 with open(input_file, 'r', encoding='utf-8') as f:
@@ -65,11 +65,11 @@ for query_id, models_answers in query_model_answers.items():
 # Check for duplicates and model counts
 print("\nChecking for duplicates and model counts...")
 total_records = sum(len(answers) for models in query_model_answers.values() for answers in models.values())
-expected_records = len(query_info) * 16
+expected_records = len(query_info) * 14
 duplicates = total_records - expected_records
 
 print(f"  Total records: {total_records}")
-print(f"  Expected records (queries × 16): {expected_records}")
+print(f"  Expected records (queries × 14): {expected_records}")
 if duplicates > 0:
     print(f"  WARNING: Found {duplicates} duplicate records ({duplicates/total_records*100:.2f}%)")
 else:
@@ -79,7 +79,7 @@ queries_with_issues = []
 for query_id, models_answers in query_model_answers.items():
     unique_models = len(models_answers)
     total_answers = sum(len(answers) for answers in models_answers.values())
-    if unique_models != 16 or total_answers != unique_models:
+    if unique_models != 14 or total_answers != unique_models:
         queries_with_issues.append((query_id, unique_models, total_answers))
 
 if queries_with_issues:
@@ -92,13 +92,14 @@ if queries_with_issues:
     if len(queries_with_issues) > 10:
         print(f"    ... and {len(queries_with_issues) - 10} more")
 else:
-    print(f"  OK: All queries have exactly 16 unique models with no duplicates")
+    print(f"  OK: All queries have exactly 14 unique models with no duplicates")
 
 # Group by dataset category
 print("\nGrouping by dataset category...")
 bbh_queries = []
 math_queries = []
 mmlu_queries = []
+tele_queries = []
 
 for query_id, data in query_difficulty.items():
     dataset = data['dataset']
@@ -119,10 +120,13 @@ for query_id, data in query_difficulty.items():
         math_queries.append(query_entry)
     elif dataset == 'mmlu_pro':
         mmlu_queries.append(query_entry)
+    elif dataset == 'teleqna' or 'telequad':
+        tele_queries.append(query_entry)
 
 print(f"  BBH queries: {len(bbh_queries)}")
 print(f"  MATH queries: {len(math_queries)}")
 print(f"  MMLU_PRO queries: {len(mmlu_queries)}")
+print(f"  TELE queries: {len(tele_queries)}")
 
 # Calculate statistics
 def calculate_stats(queries):
@@ -140,6 +144,7 @@ def calculate_stats(queries):
 bbh_stats = calculate_stats(bbh_queries)
 math_stats = calculate_stats(math_queries)
 mmlu_stats = calculate_stats(mmlu_queries)
+tele_stats = calculate_stats(tele_queries)
 
 print("\n" + "=" * 80)
 print("Difficulty Statistics:")
@@ -168,7 +173,15 @@ if mmlu_stats:
     print(f"  Mean difficulty: {mmlu_stats['mean']:.2f}%")
     print(f"  Median difficulty: {mmlu_stats['median']:.2f}%")
 
-all_queries = bbh_queries + math_queries + mmlu_queries
+print(f"\nTELE:")
+if tele_stats:
+    print(f"  Total queries: {tele_stats['count']}")
+    print(f"  Min difficulty: {tele_stats['min']:.2f}%")
+    print(f"  Max difficulty: {tele_stats['max']:.2f}%")
+    print(f"  Mean difficulty: {tele_stats['mean']:.2f}%")
+    print(f"  Median difficulty: {tele_stats['median']:.2f}%")
+
+all_queries = bbh_queries + math_queries + mmlu_queries + tele_queries
 
 output_jsonl = "query_difficulty.jsonl"
 with open(output_jsonl, 'w', encoding='utf-8') as f:

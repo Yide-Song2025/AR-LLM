@@ -1,5 +1,6 @@
 import random
 import os
+import json
 import argparse
 
 import numpy as np
@@ -23,6 +24,7 @@ def argument_parser():
     parser.add_argument("--bbh_datasets", type=str, default="lukaemon/bbh", help="Path to BBH data")
     parser.add_argument("--math_datasets", type=str, default="qwedsacf/competition_math", help="Path to Math data")
     parser.add_argument("--mmlu_pro_datasets", type=str, default="TIGER-Lab/MMLU-Pro", help="Path to MMLU Pro data")
+    parser.add_argument("--tele_dataset", type=str, default="data/TeleQuAD-v4-full.json", help="Path to TeleQuAD local JSON")
     parser.add_argument("--num_samples_per_dataset", type=int, default=10000, help="Number of samples to load from each dataset")
     parser.add_argument("--save_path", type=str, default="./model_checkpoints", help="Path to save model checkpoints")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Path to resume from checkpoint")
@@ -91,15 +93,36 @@ if __name__ == "__main__":
         random.shuffle(mmlu_pro_samples)
         mmlu_pro_samples = mmlu_pro_samples[:min(args.num_samples_per_dataset, len(mmlu_pro_samples))]
 
+        # Load TeleQnA from HuggingFace
+        teleqna_data = load_dataset("ymoslem/TeleQnA-processed", split="train")
+        teleqna_samples = teleqna_data.to_pandas().to_dict('records')
+
+        # Load TeleQuAD from local JSON
+        with open(args.tele_dataset, 'r', encoding='utf-8') as f:
+            telequad_raw = json.load(f)
+        telequad_samples = []
+        for doc in telequad_raw["data"]:
+            for para in doc.get("paragraphs", []):
+                for qa in para.get("qas", []):
+                    if not qa.get("is_impossible", False):
+                        telequad_samples.append({"question": qa["question"]})
+
+        # Combine and sample 10,000 total from both tele datasets
+        combined_tele = teleqna_samples + telequad_samples
+        random.shuffle(combined_tele)
+        combined_tele = combined_tele[:min(10000, len(combined_tele))]
+
         data_dict = {
             'bbh': bbh_samples,
             'math': math_samples,
-            'mmlu_pro': mmlu_pro_samples
+            'mmlu_pro': mmlu_pro_samples,
+            'tele': combined_tele
         }
-        
+
         print(f"Loaded {len(bbh_samples)} samples from BBH dataset")
         print(f"Loaded {len(math_samples)} samples from Math dataset")
         print(f"Loaded {len(mmlu_pro_samples)} samples from MMLU Pro dataset")
+        print(f"Loaded {len(combined_tele)} samples from Tele datasets ({len(teleqna_samples)} TeleQnA + {len(telequad_samples)} TeleQuAD, sampled to 10000)")
 
         
         # Print sample data from each dataset
@@ -118,6 +141,10 @@ if __name__ == "__main__":
         if mmlu_pro_samples:
             print("\nMMLU Pro sample:")
             print(mmlu_pro_samples[0])
+
+        if combined_tele:
+            print("\nTele sample:")
+            print(combined_tele[0])
 
         print("="*60 + "\n")
 
@@ -140,7 +167,7 @@ if __name__ == "__main__":
     
     print("Creating datasets...")
     if args.multi_class:
-        num_classes = 3  # Example for multi-class classification
+        num_classes = 4  # bbh, math, mmlu_pro, tele
         print(f"Using {num_classes} classes for multi-class classification.")
         train_dataset = MultiClassClassificationDataset(train_data, tokenizer, args.max_length)
         test_dataset = MultiClassClassificationDataset(test_data, tokenizer, args.max_length)

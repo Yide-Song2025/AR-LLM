@@ -50,7 +50,7 @@ def predict_and_save(
     multi_class_model = MultiClassClassifier(
         model_name=model_name,
         hidden_dim=768,
-        num_classes=3,
+        num_classes=4,
         dropout=0.1
     ).to(device)
     

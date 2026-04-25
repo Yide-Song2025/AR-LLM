@@ -72,6 +72,8 @@ class MultiClassClassificationDataset(Dataset):
                 label = 1
             elif sample["task_name"] == "mmlu_pro":
                 label = 2
+            elif sample["task_name"] == "tele":
+                label = 3
             else:
                 continue
             if prompt_text and len(prompt_text.strip()) > 0:
@@ -267,6 +269,14 @@ def preprocess_task_data(data_dict):
                 })
                 id += 1
         elif task == "mmlu_pro":
+            for sample in samples:
+                processed_data.append({
+                    "id": id,
+                    "task_name": task,
+                    "prompt": sample["question"]
+                })
+                id += 1
+        elif task == "tele":
             for sample in samples:
                 processed_data.append({
                     "id": id,
