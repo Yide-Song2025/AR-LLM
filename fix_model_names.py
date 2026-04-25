@@ -13,7 +13,7 @@ OPENROUTER_TO_MODELS_INFO = {
     "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
     "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
     "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
-    "qwen/qwen-2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
+    "qwen/qwen2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
     "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
     "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
     "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
@@ -39,6 +39,48 @@ def fix_model_name(model: str) -> str:
     return OPENROUTER_TO_MODELS_INFO.get(model, model)
 
 
+def parse_jsonl_robust(filepath: str):
+    """Yield parsed JSON objects from a JSONL file, handling concatenated
+    objects and literal newlines embedded inside string values."""
+    with open(filepath, encoding="utf-8") as f:
+        content = f.read()
+
+    depth = 0
+    in_string = False
+    escape = False
+    start = None
+
+    for i, ch in enumerate(content):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0 and start is not None:
+                raw = content[start:i + 1]
+                try:
+                    yield json.loads(raw)
+                except json.JSONDecodeError:
+                    fixed = raw.replace('\n', '\\n').replace('\r', '\\r')
+                    try:
+                        yield json.loads(fixed)
+                    except json.JSONDecodeError:
+                        pass
+                start = None
+
+
 def clean_file(path: str):
     p = Path(path)
     if not p.exists():
@@ -49,19 +91,14 @@ def clean_file(path: str):
     total = 0
     fixed = 0
 
-    with open(p, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            total += 1
-            r = json.loads(line)
-            old_model = r["model"]
-            r["model"] = fix_model_name(old_model)
-            if r["model"] != old_model:
-                fixed += 1
-            key = (r["model"], r["query_id"])
-            seen[key] = r
+    for r in parse_jsonl_robust(str(p)):
+        total += 1
+        old_model = r["model"]
+        r["model"] = fix_model_name(old_model)
+        if r["model"] != old_model:
+            fixed += 1
+        key = (r["model"], r["query_id"])
+        seen[key] = r
 
     unique = len(seen)
     dupes = total - unique
