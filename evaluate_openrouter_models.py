@@ -13,22 +13,22 @@ from datasets import load_dataset
 
 # Map OpenRouter model names to their models_info.json keys
 OPENROUTER_TO_MODELS_INFO = {
-    # "maziyarpanahi/calme-3.2-instruct-78b": "MaziyarPanahi/calme-3.2-instruct-78b",
-    "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
-    # "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
-    # "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
+    "maziyarpanahi/calme-3.2-instruct-78b": "MaziyarPanahi/calme-3.2-instruct-78b",
+    # "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
+    "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
+    "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
     "qwen/qwen-2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
-    # "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
-    # "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    # "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
-    "meta-llama/llama-3.1-70b-instruct": "meta-llama/Llama-3.1-70B-Instruct",
-    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
-    "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
-    "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
-    "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
-    # "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    # "deepseek/deepseek-r1-distill-qwen-32b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-    # "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
+    "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
+    "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
+    # "meta-llama/llama-3.1-70b-instruct": "meta-llama/Llama-3.1-70B-Instruct",
+    # "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    # "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    # "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
+    # "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
+    "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+    "deepseek/deepseek-r1-distill-qwen-32b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+    "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
 }
 
 MODELS = list(OPENROUTER_TO_MODELS_INFO.keys())
@@ -51,17 +51,18 @@ CACHE_FILE = "data/model_data/openrouter_eval_cache.jsonl"
 MAX_WORKERS = 32
 
 # ----------------------------------------------------------------------
-# API clients
+# API clients (defaults — can be overridden via --base-url / --api-key)
 # ----------------------------------------------------------------------
-openrouter_client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key="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",
-)
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_API_KEY = "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"
 
-deepseek_client = OpenAI(
-    base_url="https://api.deepseek.com",
-    api_key="sk-a98fe343cce6419b97eb35829b0d72e5",
-)
+openrouter_client = OpenAI(base_url=DEFAULT_BASE_URL, api_key=DEFAULT_API_KEY)
+deepseek_client = OpenAI(base_url="https://api.deepseek.com", api_key="sk-a98fe343cce6419b97eb35829b0d72e5")
+
+
+def init_clients(base_url: str, api_key: str):
+    global openrouter_client
+    openrouter_client = OpenAI(base_url=base_url, api_key=api_key)
 
 # ----------------------------------------------------------------------
 # Prompt templates
@@ -465,7 +466,13 @@ def main():
     parser.add_argument("--test", action="store_true", help="Quick test: 3 models, 3 items per dataset")
     parser.add_argument("--models", type=int, default=None, help="Limit number of models to evaluate")
     parser.add_argument("--items", type=int, default=None, help="Limit items per dataset split")
+    parser.add_argument("--base-url", type=str, default=DEFAULT_BASE_URL,
+                        help="API base URL (default: OpenRouter)")
+    parser.add_argument("--api-key", type=str, default=DEFAULT_API_KEY,
+                        help="API key (default: OpenRouter key)")
     args = parser.parse_args()
+
+    init_clients(args.base_url, args.api_key)
 
     print("=" * 70)
     print("OpenRouter Model Evaluation — TeleQnA + TeleQuAD")
