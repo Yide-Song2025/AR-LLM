@@ -9,29 +9,28 @@ import json
 from pathlib import Path
 
 OPENROUTER_TO_MODELS_INFO = {
-    "maziyarpanahi/calme-3.2-instruct-78b": "MaziyarPanahi/calme-3.2-instruct-78b",
-    "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
-    "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
-    "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
-    "qwen/qwen2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
-    "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
-    "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
-    "meta-llama/llama-3.1-70b-instruct": "meta-llama/Llama-3.1-70B-Instruct",
-    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    "qwen/qwen3.5-9b": "Qwen/Qwen3.5-9B",
+    "qwen/qwen3-8b": "Qwen/Qwen3-8B",
+    "qwen/qwen3-14b": "Qwen/Qwen3-14B",
+    "qwen/qwen3-32b": "Qwen/Qwen3-32B",
+    "qwen/qwen3.5-27b": "Qwen/Qwen3.5-27B",
+    "qwen/qwen3.5-35b-a3b": "Qwen/Qwen3.5-35B-A3B",
+    "qwen/qwen3.5-122b-a10b": "Qwen/Qwen3.5-122B-A10B",
     "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
     "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
     "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
-    "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    "deepseek/deepseek-r1-distill-qwen-32b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-    "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "meta-llama/llama-4-scout": "meta-llama/Llama-4-Scout",
+    "google/gemma-4-31b-it": "google/gemma-4-31B",
+    "google/gemma-4-26b-a4b-it": "google/gemma-4-26B-A4B"
 }
 
 FILES = [
-    "data/model_data/openrouter_eval_cache.jsonl",
-    "data/model_data/teleqna_openrouter_results.jsonl",
-    "data/model_data/teleqna_test_openrouter_results.jsonl",
-    "data/model_data/telequad_openrouter_results.jsonl",
+    "data/model_data/tele_openrouter_results.jsonl",
+    "data/model_data/math_openrouter_results.jsonl",
+    "data/model_data/bbh_openrouter_results.jsonl",
+    "data/model_data/mmlu_pro_openrouter_results.jsonl",
+    "data/model_data/openrouter_eval_cache.jsonl"
 ]
 
 

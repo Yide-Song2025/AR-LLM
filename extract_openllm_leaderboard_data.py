@@ -219,37 +219,37 @@ def main():
         print(f"Processing model: {model}")
         print(f"{'=' * 80}")
         
-        # print(f"\nExtracting BBH data...")
-        # bbh_success = 0
-        # bbh_failed = 0
-        # for subset in tqdm(BBH_SUBSETS, desc="BBH subsets"):
-        #     results = extract_model_results_from_leaderboard(model, "bbh", subset)
-        #     if results:
-        #         bbh_success += 1
-        #         all_results.extend(results)
-        #     else:
-        #         bbh_failed += 1
-        # print(f"  BBH : Success {bbh_success}, Failed {bbh_failed}")
+        print(f"\nExtracting BBH data...")
+        bbh_success = 0
+        bbh_failed = 0
+        for subset in tqdm(BBH_SUBSETS, desc="BBH subsets"):
+            results = extract_model_results_from_leaderboard(model, "bbh", subset)
+            if results:
+                bbh_success += 1
+                all_results.extend(results)
+            else:
+                bbh_failed += 1
+        print(f"  BBH : Success {bbh_success}, Failed {bbh_failed}")
         
-        # print(f"\nExtracting MATH data...")
-        # math_success = 0
-        # math_failed = 0
-        # for subset in tqdm(MATH_SUBSETS, desc="MATH subsets"):
-        #     results = extract_model_results_from_leaderboard(model, "math", subset)
-        #     if results:
-        #         math_success += 1
-        #         all_results.extend(results)
-        #     else:
-        #         math_failed += 1
-        # print(f"  MATH : Success {math_success}, Failed {math_failed}")
+        print(f"\nExtracting MATH data...")
+        math_success = 0
+        math_failed = 0
+        for subset in tqdm(MATH_SUBSETS, desc="MATH subsets"):
+            results = extract_model_results_from_leaderboard(model, "math", subset)
+            if results:
+                math_success += 1
+                all_results.extend(results)
+            else:
+                math_failed += 1
+        print(f"  MATH : Success {math_success}, Failed {math_failed}")
         
-        # print(f"\nExtracting MMLU-Pro data...")
-        # results = extract_model_results_from_leaderboard(model, "mmlu_pro")
-        # if results:
-        #     all_results.extend(results)
-        #     print(f"  MMLU-Pro : Success")
-        # else:
-        #     print(f"  MMLU-Pro : Failed")
+        print(f"\nExtracting MMLU-Pro data...")
+        results = extract_model_results_from_leaderboard(model, "mmlu_pro")
+        if results:
+            all_results.extend(results)
+            print(f"  MMLU-Pro : Success")
+        else:
+            print(f"  MMLU-Pro : Failed")
 
         results = extract_model_results_from_leaderboard(model, "gpqa", subset="main")
         if results:

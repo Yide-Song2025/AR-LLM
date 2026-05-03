@@ -4,9 +4,9 @@ import os
 
 random.seed(42)
 
-input_path = "data/feature_vectors/ID/data_samples_features.jsonl"
-train_path = "data/feature_vectors/ID/data_samples_features_train.jsonl"
-test_path = "data/feature_vectors/ID/data_samples_features_test.jsonl"
+input_path = "data/feature_vectors/ID/extracted_dataset_samples_new_merged_features.jsonl"
+train_path = "data/feature_vectors/ID/extracted_dataset_samples_new_merged_features_train.jsonl"
+test_path = "data/feature_vectors/ID/extracted_dataset_samples_new_merged_features_test.jsonl"
 
 with open(input_path, "r", encoding="utf-8") as f:
     lines = f.readlines()

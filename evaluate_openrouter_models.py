@@ -9,47 +9,57 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from openai import OpenAI, RateLimitError, APIError, BadRequestError
-from datasets import load_dataset
+from datasets import load_dataset, get_dataset_config_names
 
 # Map OpenRouter model names to their models_info.json keys
 OPENROUTER_TO_MODELS_INFO = {
-    # "maziyarpanahi/calme-3.2-instruct-78b": "MaziyarPanahi/calme-3.2-instruct-78b",
-    "qwen/qwen-2.5-72b-instruct": "Qwen/Qwen2.5-72B-Instruct",
-    "qwen/qwen2.5-32b-instruct": "Qwen/Qwen2.5-32B-Instruct",
-    "qwen/qwen2.5-14b-instruct": "Qwen/Qwen2.5-14B-Instruct",
-    "qwen/qwen-2.5-7b-instruct": "Qwen/Qwen2.5-7B-Instruct",
-    "qwen/qwen2.5-3b-instruct": "Qwen/Qwen2.5-3B-Instruct",
-    "qwen/qwen2.5-1.5b-instruct": "Qwen/Qwen2.5-1.5B-Instruct",
-    "qwen/qwen2.5-0.5b-instruct": "Qwen/Qwen2.5-0.5B-Instruct",
-    "meta-llama/llama-3.1-70b-instruct": "meta-llama/Llama-3.1-70B-Instruct",
-    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    "qwen/qwen3-8b": {"name":"Qwen/Qwen3-8B", "provider":"alibaba"},
+    "qwen/qwen3-14b": {"name":"Qwen/Qwen3-14B", "provider":"alibaba"},
+    "qwen/qwen3-32b": {"name": "Qwen/Qwen3-32B", "provider":"alibaba"},
+    "qwen/qwen3.5-9b": "Qwen/Qwen3.5-9B",
+    "qwen/qwen3.5-27b": {"name": "Qwen/Qwen3.5-27B", "provider":"alibaba"},
+    "qwen/qwen3.5-35b-a3b": "Qwen/Qwen3.5-35B-A3B",
+    "qwen/qwen3.5-122b-a10b": {"name": "Qwen/Qwen3.5-122B-A10B", "provider":"alibaba"},
     "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
     "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
     "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
-    "deepseek/deepseek-r1-distill-qwen-14b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    # "deepseek/deepseek-r1-distill-qwen-32b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
-    "deepseek/deepseek-r1-distill-qwen-7b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "meta-llama/llama-4-scout": "meta-llama/Llama-4-Scout",
+    "google/gemma-4-31b-it": {"name": "google/gemma-4-31B", "provider":"venice/bf16"},
+    "google/gemma-4-26b-a4b-it": {"name": "google/gemma-4-26B-A4B", "provider":"ionstream/bf16"}
 }
 
 MODELS = list(OPENROUTER_TO_MODELS_INFO.keys())
 
+BBH_SUBSETS = None  # populated dynamically by load_bbh()
+
+
+def _get_model_config(openrouter_model: str) -> Tuple[str, Optional[str]]:
+    """Return (canonical_name, provider_or_None) for a model."""
+    val = OPENROUTER_TO_MODELS_INFO.get(openrouter_model, openrouter_model)
+    if isinstance(val, dict):
+        return val["name"], val.get("provider")
+    return val, None
+
 
 def canonical_model_name(openrouter_model: str) -> str:
     """Return the models_info key, falling back to the input name."""
-    return OPENROUTER_TO_MODELS_INFO.get(openrouter_model, openrouter_model)
+    return _get_model_config(openrouter_model)[0]
+
 
 root = 'data'
 # ----------------------------------------------------------------------
 # Output files
 # ----------------------------------------------------------------------
-OUT_TELEQNA_ALL  = root + "/model_data/teleqna_openrouter_results.jsonl"
-OUT_TELEQNA_TEST = root + "/model_data/teleqna_test_openrouter_results.jsonl"
-OUT_TELEQUAD     = root + "/model_data/telequad_openrouter_results.jsonl"
+OUT_TELE     = root + "/model_data/tele_openrouter_results.jsonl"
+OUT_MATH     = root + "/model_data/math_openrouter_results.jsonl"
+OUT_BBH      = root + "/model_data/bbh_openrouter_results.jsonl"
+OUT_MMLU_PRO = root + "/model_data/mmlu_pro_openrouter_results.jsonl"
 
 # Temporary cache file for interrupt recovery
 CACHE_FILE = root + "/model_data/openrouter_eval_cache.jsonl"
 
-MAX_WORKERS = 16
+MAX_WORKERS = 256
 
 # ----------------------------------------------------------------------
 # API clients (defaults — can be overridden via --base-url / --api-key)
@@ -65,6 +75,7 @@ def init_clients(base_url: str, api_key: str):
     global openrouter_client
     openrouter_client = OpenAI(base_url=base_url, api_key=api_key)
 
+
 # ----------------------------------------------------------------------
 # Prompt templates
 # ----------------------------------------------------------------------
@@ -72,64 +83,101 @@ TELEQNA_TEMPLATE = """{question}
 
 {choices_formatted}
 
-Think concisely, then reply with just the answer inside \\boxed{{}}. Only the number inside the box, nothing else."""
+Reply with just the answer inside \\boxed{{}}. Only the number inside the box, nothing else."""
 
 TELEQUAD_TEMPLATE = """Context: {context}
 
 Question: {question}
 
-Think concisely, then reply with just the answer inside \\boxed{{}}. Keep your answer brief and concise."""
+Reply with just the answer inside \\boxed{{}}. Keep your answer brief and concise."""
+
+MATH_TEMPLATE = """Solve the following math problem step by step. Put your final answer inside \\boxed{{}}.
+
+Problem:
+{problem}"""
+
+BBH_TEMPLATE = """{input}
+
+Think step by step, then put your final answer inside \\boxed{{}}."""
+
+MMLU_PRO_TEMPLATE = """{question}
+
+{options_formatted}
+
+Reply with just the letter of the correct answer inside \\boxed{{}}. Only the letter inside the box, nothing else."""
 
 
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
 def extract_boxed_answer(text: str) -> Optional[str]:
-    """Extract content inside /box{...} from model output."""
+    """Extract content inside \\boxed{...} from model output."""
     match = re.search(r'[/\\]box(?:ed)?\{([^}]*)\}', text)
     return match.group(1).strip() if match else None
 
 
-def call_openrouter(model: str, prompt: str, max_retries: int = 1) -> Optional[str]:
+def extract_math_answer_from_solution(solution: str) -> Optional[str]:
+    """Extract the final boxed answer from a MATH solution (handles nested braces)."""
+    idx = solution.rfind('\\boxed{')
+    if idx == -1:
+        return None
+    start = idx + len('\\boxed{')
+    depth = 1
+    i = start
+    while i < len(solution) and depth > 0:
+        if solution[i] == '{':
+            depth += 1
+        elif solution[i] == '}':
+            depth -= 1
+        i += 1
+    return solution[start:i - 1].strip()
+
+
+def call_openrouter(model: str, prompt: str, max_retries: int = 3) -> Optional[str]:
     """Call OpenRouter API with exponential backoff."""
+    _, provider = _get_model_config(model)
+    provider_prefs = {"provider": {"only": [provider]}} if provider else None
     for attempt in range(max_retries):
         try:
-            response = openrouter_client.chat.completions.create(
+            kwargs = dict(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
-                max_tokens=2048,
+                max_tokens=4096,
             )
+            if provider_prefs:
+                kwargs["extra_body"] = provider_prefs
+            response = openrouter_client.chat.completions.create(**kwargs)
             return response.choices[0].message.content
         except BadRequestError as e:
-            # Model unavailable or bad request
             if attempt == 0:
                 print(f"    [WARN] BadRequestError for {model}: {e}")
             return None
-        except RateLimitError as e:
-            if attempt == 0:
-                print(f"    [WARN] Rate limited for {model}: {e}")
-            time.sleep(2)
-        except APIError as e:
-            if attempt == 0:
-                print(f"    [WARN] APIError for {model}: {e}")
-            time.sleep(2)
+        except (RateLimitError, APIError) as e:
+            wait = min(2 ** (attempt + 1), 30)
+            print(f"    [WARN] {type(e).__name__} for {model} (attempt {attempt+1}/{max_retries}), retrying in {wait}s")
+            time.sleep(wait)
         except Exception as e:
-            if attempt == 0:
-                print(f"    [WARN] Unexpected error for {model}: {e}")
-            time.sleep(2)
+            wait = min(2 ** (attempt + 1), 30)
+            print(f"    [WARN] Unexpected error for {model}: {e} (attempt {attempt+1}/{max_retries}), retrying in {wait}s")
+            time.sleep(wait)
     return None
 
 
 def check_model_available(model: str) -> bool:
     """Probe model with a trivial prompt to check availability."""
+    _, provider = _get_model_config(model)
+    provider_prefs = {"provider": {"only": [provider]}} if provider else None
     try:
-        response = openrouter_client.chat.completions.create(
+        kwargs = dict(
             model=model,
             messages=[{"role": "user", "content": "Hi"}],
             temperature=0.0,
             max_tokens=5,
         )
+        if provider_prefs:
+            kwargs["extra_body"] = provider_prefs
+        response = openrouter_client.chat.completions.create(**kwargs)
         return True
     except BadRequestError:
         return False
@@ -137,7 +185,8 @@ def check_model_available(model: str) -> bool:
         return True  # Assume available on other errors
 
 
-def judge_with_deepseek(question: str, reference: str, response_text: str, max_retries: int = 3, verbose: bool = False) -> int:
+def judge_with_deepseek(question: str, reference: str, response_text: str,
+                        max_retries: int = 3, verbose: bool = False) -> int:
     """Use DeepSeek to judge if model's answer is semantically equivalent to reference."""
     prompt = (
         "You are a precise answer evaluator. Given a question, the reference (correct) answer, "
@@ -176,40 +225,27 @@ def judge_with_deepseek(question: str, reference: str, response_text: str, max_r
 # ----------------------------------------------------------------------
 # Dataset loading
 # ----------------------------------------------------------------------
-def load_teleqna() -> Tuple[List[Dict], List[Dict]]:
-    """Load TeleQnA train and test splits from HuggingFace."""
-    ds = load_dataset("ymoslem/TeleQnA-processed", split="train")
-    train_items = []
-    for idx, row in enumerate(ds):
-        train_items.append({
-            "question": row["question"],
-            "choices": row["choices"],
-            "answer_idx": int(row["answer"]),
-            "subject": row["subject"],
-            "explanation": row.get("explanation", ""),
-            "split": "train",
-            "global_idx": idx,
-        })
-
-    ds_test = load_dataset("ymoslem/TeleQnA-processed", split="test")
-    test_items = []
-    for idx, row in enumerate(ds_test):
-        test_items.append({
-            "question": row["question"],
-            "choices": row["choices"],
-            "answer_idx": int(row["answer"]),
-            "subject": row["subject"],
-            "explanation": row.get("explanation", ""),
-            "split": "test",
-            "global_idx": idx,
-        })
-
-    print(f"  Loaded TeleQnA: {len(train_items)} train, {len(test_items)} test")
-    return train_items, test_items
+def load_teleqna() -> List[Dict]:
+    """Load TeleQnA train + test from HuggingFace."""
+    items = []
+    for split in ["train", "test"]:
+        ds = load_dataset("ymoslem/TeleQnA-processed", split=split)
+        for row in ds:
+            items.append({
+                "question": row["question"],
+                "choices": row["choices"],
+                "answer_idx": int(row["answer"]),
+                "subject": row["subject"],
+                "explanation": row.get("explanation", ""),
+                "source": "teleqna",
+                "orig_split": split,
+            })
+    print(f"  Loaded TeleQnA: {len(items)} items")
+    return items
 
 
 def load_telequad() -> List[Dict]:
-    """Parse TeleQuAD from local JSON, flatten to list of items."""
+    """Parse TeleQuAD from local JSON."""
     path = Path("data/TeleQuAD-v4-full.json")
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
@@ -230,18 +266,104 @@ def load_telequad() -> List[Dict]:
                     "question": qa["question"],
                     "ref_answer": answers[0]["text"],
                     "qa_id": qa["id"],
-                    "source": source,
+                    "source": "telequad",
                 })
-
     print(f"  Loaded TeleQuAD: {len(items)} questions")
+    return items
+
+
+def load_tele() -> List[Dict]:
+    """Load unified tele dataset: TeleQnA + TeleQuAD with sequential tele_ IDs."""
+    teleqna = load_teleqna()
+    telequad = load_telequad()
+    all_items = teleqna + telequad
+    for idx, item in enumerate(all_items):
+        item["global_idx"] = idx
+    print(f"  Unified tele: {len(all_items)} items ({len(teleqna)} TeleQnA + {len(telequad)} TeleQuAD)")
+    return all_items
+
+
+def load_math() -> List[Dict]:
+    """Load MATH (competition_math) from HuggingFace."""
+    ds = load_dataset("qwedsacf/competition_math", split="train")
+    items = []
+    for idx, row in enumerate(ds):
+        answer = extract_math_answer_from_solution(row.get("solution", ""))
+        items.append({
+            "problem": row["problem"],
+            "solution": row.get("solution", ""),
+            "ref_answer": answer or "",
+            "level": row.get("level", ""),
+            "type": row.get("type", ""),
+            "global_idx": idx,
+        })
+    print(f"  Loaded MATH: {len(items)} items")
+    return items
+
+
+def load_bbh() -> List[Dict]:
+    """Load BBH from HuggingFace (all subsets, discovered dynamically)."""
+    global BBH_SUBSETS
+    BBH_SUBSETS = get_dataset_config_names("lukaemon/bbh")
+    print(f"  Found {len(BBH_SUBSETS)} BBH subsets")
+
+    items = []
+    idx = 0
+    for subset in BBH_SUBSETS:
+        try:
+            ds = load_dataset("lukaemon/bbh", subset, split="test")
+            for row in ds:
+                items.append({
+                    "input": row["input"],
+                    "target": row["target"],
+                    "subset": subset,
+                    "global_idx": idx,
+                })
+                idx += 1
+        except Exception as e:
+            print(f"    [WARN] Failed to load BBH subset '{subset}': {e}")
+    print(f"  Loaded BBH: {len(items)} items ({len(BBH_SUBSETS)} subsets)")
+    return items
+
+
+def load_mmlu_pro() -> List[Dict]:
+    """Load MMLU-Pro from HuggingFace."""
+    ds = load_dataset("TIGER-Lab/MMLU-Pro", split="test")
+    items = []
+    for idx, row in enumerate(ds):
+        answer_raw = row.get("answer", 0)
+        if isinstance(answer_raw, str):
+            answer_idx = "ABCDEFGHIJ".find(answer_raw.upper())
+            if answer_idx == -1:
+                try:
+                    answer_idx = int(answer_raw)
+                except ValueError:
+                    answer_idx = 0
+        else:
+            answer_idx = int(answer_raw)
+        items.append({
+            "question": row["question"],
+            "options": row.get("options", []),
+            "answer_idx": answer_idx,
+            "category": row.get("category", ""),
+            "global_idx": idx,
+        })
+    print(f"  Loaded MMLU-Pro: {len(items)} items")
     return items
 
 
 # ----------------------------------------------------------------------
 # Evaluation logic
 # ----------------------------------------------------------------------
-def evaluate_teleqna_item(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
-    """Evaluate a single TeleQnA item via OpenRouter. Returns None on error."""
+def evaluate_tele_item(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
+    """Evaluate a unified tele item — dispatches to TeleQnA or TeleQuAD logic."""
+    if item["source"] == "teleqna":
+        return _evaluate_teleqna(item, model, verbose)
+    else:
+        return _evaluate_telequad(item, model, verbose)
+
+
+def _evaluate_teleqna(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
     choices = item["choices"]
     choices_formatted = "\n".join(f"{i}. {c}" for i, c in enumerate(choices))
     prompt = TELEQNA_TEMPLATE.format(
@@ -253,9 +375,8 @@ def evaluate_teleqna_item(item: Dict, model: str, verbose: bool = False) -> Opti
     if response_text is None:
         return None
 
-    query_id = f"teleqna_{item['split']}_{item['global_idx']}"
+    query_id = f"tele_{item['global_idx']}"
     ground_truth = choices[item["answer_idx"]]
-
     boxed = extract_boxed_answer(response_text)
 
     if verbose:
@@ -264,18 +385,14 @@ def evaluate_teleqna_item(item: Dict, model: str, verbose: bool = False) -> Opti
         print(f"    [GT] {ground_truth}")
         print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
 
-    # Try matching: first as integer index, then as text
     correct = 0.0
     if boxed is not None:
-        # Try index match
         try:
             idx = int(boxed)
             if 0 <= idx < len(choices) and idx == item["answer_idx"]:
                 correct = 1.0
         except ValueError:
             pass
-
-        # Try text match (case-insensitive, strip)
         if correct == 0.0:
             if boxed.strip().lower() == ground_truth.strip().lower():
                 correct = 1.0
@@ -284,15 +401,15 @@ def evaluate_teleqna_item(item: Dict, model: str, verbose: bool = False) -> Opti
         "query": item["question"],
         "answer": ground_truth,
         "model": model,
-        "dataset": "teleqna",
-        "subset": item["subject"],
+        "dataset": "tele",
+        "subset": item.get("subject", ""),
         "correct": correct,
         "query_id": query_id,
+        "source": "teleqna",
     }
 
 
-def evaluate_telequad_item(item: Dict, model: str, idx: int, verbose: bool = False) -> Optional[Dict]:
-    """Evaluate a single TeleQuAD item via OpenRouter, judge with DeepSeek. Returns None on error."""
+def _evaluate_telequad(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
     prompt = TELEQUAD_TEMPLATE.format(
         context=item["context"],
         question=item["question"],
@@ -302,7 +419,7 @@ def evaluate_telequad_item(item: Dict, model: str, idx: int, verbose: bool = Fal
     if response_text is None:
         return None
 
-    query_id = f"telequad_{idx}"
+    query_id = f"tele_{item['global_idx']}"
     boxed = extract_boxed_answer(response_text)
 
     if verbose:
@@ -314,19 +431,158 @@ def evaluate_telequad_item(item: Dict, model: str, idx: int, verbose: bool = Fal
     if boxed is not None:
         response_for_judge = boxed
     else:
-        parts = response_text.rsplit("</think>", 1)
+        parts = response_text.rsplit("\n", 1)
         response_for_judge = parts[-1] if len(parts) > 1 else response_text
 
-    # Judge with DeepSeek
-    correct = judge_with_deepseek(item["question"], item["ref_answer"], response_for_judge, verbose=verbose) if response_for_judge else 0
+    correct = judge_with_deepseek(
+        item["question"], item["ref_answer"], response_for_judge, verbose=verbose
+    ) if response_for_judge else 0
 
     return {
         "query": item["question"],
         "answer": item["ref_answer"],
         "model": model,
-        "dataset": "telequad",
-        "subset": item["source"],
+        "dataset": "tele",
+        "subset": item.get("source", "telequad"),
         "correct": float(correct),
+        "query_id": query_id,
+        "source": "telequad",
+    }
+
+
+def evaluate_math_item(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
+    """Evaluate a MATH item via direct text matching."""
+    prompt = MATH_TEMPLATE.format(problem=item["problem"])
+
+    response_text = call_openrouter(model, prompt)
+    if response_text is None:
+        return None
+
+    query_id = f"math_{item['global_idx']}"
+    boxed = extract_boxed_answer(response_text)
+    ref_answer = item["ref_answer"]
+
+    if verbose:
+        print(f"\n    [PROMPT]\n{prompt}")
+        print(f"    [RESPONSE] {response_text}")
+        print(f"    [GT] {ref_answer}")
+        print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
+
+    correct = 0.0
+    if boxed is not None:
+        boxed_stripped = boxed.strip()
+        if boxed_stripped.lower() == ref_answer.lower():
+            correct = 1.0
+        elif boxed_stripped.strip("()").lower() == ref_answer.strip().strip("()").lower():
+            correct = 1.0
+        else:
+            try:
+                if float(boxed_stripped) == float(ref_answer):
+                    correct = 1.0
+            except (ValueError, TypeError):
+                pass
+
+    return {
+        "query": item["problem"],
+        "answer": ref_answer,
+        "model": model,
+        "dataset": "math",
+        "subset": item.get("type", ""),
+        "correct": float(correct),
+        "query_id": query_id,
+    }
+
+
+def evaluate_bbh_item(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
+    """Evaluate a BBH item via direct text matching."""
+    prompt = BBH_TEMPLATE.format(input=item["input"])
+
+    response_text = call_openrouter(model, prompt)
+    if response_text is None:
+        return None
+
+    query_id = f"bbh_{item['global_idx']}"
+    boxed = extract_boxed_answer(response_text)
+    target = item["target"]
+
+    if verbose:
+        print(f"\n    [PROMPT]\n{prompt}")
+        print(f"    [RESPONSE] {response_text}")
+        print(f"    [GT] {target}")
+        print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
+
+    correct = 0.0
+    if boxed is not None:
+        target_clean = target.strip().lower()
+        boxed_clean = boxed.strip().lower()
+        if boxed_clean == target_clean or boxed_clean.strip("()") == target_clean.strip("()"):
+            correct = 1.0
+        elif target_clean in boxed_clean:
+            correct = 1.0
+
+    return {
+        "query": item["input"],
+        "answer": target,
+        "model": model,
+        "dataset": "bbh",
+        "subset": item.get("subset", ""),
+        "correct": correct,
+        "query_id": query_id,
+    }
+
+
+LETTERS = "ABCDEFGHIJ"
+
+
+def evaluate_mmlu_pro_item(item: Dict, model: str, verbose: bool = False) -> Optional[Dict]:
+    """Evaluate a MMLU-Pro multiple-choice item."""
+    options = item["options"]
+    options_formatted = "\n".join(
+        f"{LETTERS[i]}. {opt}" for i, opt in enumerate(options)
+    )
+    prompt = MMLU_PRO_TEMPLATE.format(
+        question=item["question"],
+        options_formatted=options_formatted,
+    )
+
+    response_text = call_openrouter(model, prompt)
+    if response_text is None:
+        return None
+
+    query_id = f"mmlu_pro_{item['global_idx']}"
+    boxed = extract_boxed_answer(response_text)
+    answer_idx = item["answer_idx"]
+    ground_truth_letter = LETTERS[answer_idx]
+    ground_truth_text = options[answer_idx] if answer_idx < len(options) else ""
+
+    if verbose:
+        print(f"\n    [PROMPT]\n{prompt}")
+        print(f"    [RESPONSE] {response_text}")
+        print(f"    [GT] {ground_truth_letter}. {ground_truth_text}")
+        print(f"    [BOXED] {boxed}") if boxed is not None else print("    [BOXED] None")
+
+    correct = 0.0
+    if boxed is not None:
+        boxed_stripped = boxed.strip()
+        if boxed_stripped.upper() == ground_truth_letter:
+            correct = 1.0
+        elif boxed_stripped.strip("()").lower() == ground_truth_text.strip().lower():
+            correct = 1.0
+        else:
+            try:
+                idx = int(boxed_stripped)
+                if idx == answer_idx:
+                    correct = 1.0
+            except ValueError:
+                pass
+
+    return {
+        "query": item["question"],
+        "answer": f"{ground_truth_letter}. {ground_truth_text}",
+        "model": model,
+        "dataset": "mmlu_pro",
+        "subset": item.get("category", ""),
+        "correct": correct,
         "query_id": query_id,
     }
 
@@ -334,47 +590,36 @@ def evaluate_telequad_item(item: Dict, model: str, idx: int, verbose: bool = Fal
 # ----------------------------------------------------------------------
 # Parallel evaluation helpers
 # ----------------------------------------------------------------------
-def _teleqna_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
+def _tele_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
     item, model, verbose = args
-    return evaluate_teleqna_item(item, model, verbose)
+    return evaluate_tele_item(item, model, verbose)
 
 
-def _telequad_worker(args: Tuple[Dict, str, int, bool]) -> Optional[Dict]:
-    item, model, idx, verbose = args
-    return evaluate_telequad_item(item, model, idx, verbose)
+def _math_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
+    item, model, verbose = args
+    return evaluate_math_item(item, model, verbose)
 
 
-def process_teleqna(items: List[Dict], model: str, desc: str, verbose: bool = False, save_every: int = 10) -> List[Dict]:
-    """Evaluate TeleQnA items in parallel, saving incrementally every `save_every` results."""
+def _bbh_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
+    item, model, verbose = args
+    return evaluate_bbh_item(item, model, verbose)
+
+
+def _mmlu_pro_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
+    item, model, verbose = args
+    return evaluate_mmlu_pro_item(item, model, verbose)
+
+
+def process_items(items: List[Dict], model: str, dataset_name: str,
+                  worker_fn, verbose: bool = False, save_every: int = 10) -> List[Dict]:
+    """Generic parallel evaluation with incremental cache saving."""
     results: List[Dict] = []
     pending: List[Dict] = []
     args_list = [(item, model, verbose) for item in items]
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_teleqna_worker, args): args for args in args_list}
-        for future in tqdm(as_completed(futures), total=len(futures), desc=desc, leave=False):
-            try:
-                result = future.result()
-                if result is not None:
-                    results.append(result)
-                    pending.append(result)
-                    if len(pending) >= save_every:
-                        save_to_cache(pending)
-                        pending = []
-            except Exception as e:
-                print(f"    [ERROR] Worker exception: {e}")
-    if pending:
-        save_to_cache(pending)
-    return results
-
-
-def process_telequad(indexed_items: List[Tuple[int, Dict]], model: str, verbose: bool = False, save_every: int = 10) -> List[Dict]:
-    """Evaluate TeleQuAD items in parallel, saving incrementally every `save_every` results."""
-    results: List[Dict] = []
-    pending: List[Dict] = []
-    args_list = [(item, model, idx, verbose) for idx, item in indexed_items]
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_telequad_worker, args): args for args in args_list}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="  TeleQuAD", leave=False):
+        futures = {executor.submit(worker_fn, args): args for args in args_list}
+        for future in tqdm(as_completed(futures), total=len(futures),
+                           desc=f"  {dataset_name}", leave=False):
             try:
                 result = future.result()
                 if result is not None:
@@ -423,30 +668,27 @@ def save_to_cache(results: List[Dict]):
 
 
 def rebuild_outputs_from_cache(cache: Dict[str, Dict], available_models: List[str]):
-    """Rebuild all three output files from cache, only for available models."""
-    # Rebuild TeleQnA combined (train + test)
-    teleqna_all: List[Dict] = []
-    teleqna_test: List[Dict] = []
-    telequad_all: List[Dict] = []
+    """Rebuild all output files from cache, only for available models."""
+    datasets: Dict[str, List[Dict]] = {"tele": [], "math": [], "bbh": [], "mmlu_pro": []}
+    output_files = {
+        "tele": OUT_TELE,
+        "math": OUT_MATH,
+        "bbh": OUT_BBH,
+        "mmlu_pro": OUT_MMLU_PRO,
+    }
 
     for model in available_models:
         if model not in cache:
             continue
         for r in cache[model].values():
-            if r["dataset"] == "teleqna":
-                teleqna_all.append(r)
-                if "_test_" in r["query_id"]:
-                    teleqna_test.append(r)
-            else:
-                telequad_all.append(r)
+            ds = r.get("dataset", "")
+            if ds in datasets:
+                datasets[ds].append(r)
 
-    teleqna_all.sort(key=lambda r: r["query_id"])
-    teleqna_test.sort(key=lambda r: r["query_id"])
-    telequad_all.sort(key=lambda r: r["query_id"])
-
-    for out, data in [(OUT_TELEQNA_ALL, teleqna_all), (OUT_TELEQNA_TEST, teleqna_test), (OUT_TELEQUAD, telequad_all)]:
+    for ds, data in datasets.items():
         if data:
-            path = Path(out)
+            data.sort(key=lambda r: r["query_id"])
+            path = Path(output_files[ds])
             path.parent.mkdir(parents=True, exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
                 for r in data:
@@ -469,10 +711,18 @@ def append_results(filepath: str, results: List[Dict]):
 # Main
 # ----------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate LLMs via OpenRouter on telecom datasets")
-    parser.add_argument("--test", action="store_true", help="Quick test: 3 models, 3 items per dataset")
-    parser.add_argument("--models", type=int, default=None, help="Limit number of models to evaluate")
-    parser.add_argument("--items", type=int, default=None, help="Limit items per dataset split")
+    parser = argparse.ArgumentParser(
+        description="Evaluate LLMs via OpenRouter on Tele + MATH + BBH + MMLU-Pro"
+    )
+    parser.add_argument("--test", action="store_true",
+                        help="Quick test: 3 models, 3 items per dataset")
+    parser.add_argument("--models", type=int, default=None,
+                        help="Limit number of models to evaluate")
+    parser.add_argument("--items", type=int, default=None,
+                        help="Limit items per dataset")
+    parser.add_argument("--dataset", type=str, default="all",
+                        choices=["all", "tele", "math", "bbh", "mmlu_pro"],
+                        help="Which dataset(s) to evaluate (default: all)")
     parser.add_argument("--base-url", type=str, default=DEFAULT_BASE_URL,
                         help="API base URL (default: OpenRouter)")
     parser.add_argument("--api-key", type=str, default=DEFAULT_API_KEY,
@@ -482,30 +732,42 @@ def main():
     init_clients(args.base_url, args.api_key)
 
     print("=" * 70)
-    print("OpenRouter Model Evaluation — TeleQnA + TeleQuAD")
+    print("OpenRouter Model Evaluation — Tele + MATH + BBH + MMLU-Pro")
     if args.test:
-        print("[TEST MODE] 3 models, 3 items per split")
+        print("[TEST MODE] 3 models, 3 items per dataset")
     print("=" * 70)
 
     # Load datasets
     print("\nLoading datasets...")
-    teleqna_train, teleqna_test = load_teleqna()
-    telequad_items = load_telequad()
+    all_datasets: Dict[str, List[Dict]] = {}
+    if args.dataset in ("all", "tele"):
+        all_datasets["tele"] = load_tele()
+    if args.dataset in ("all", "math"):
+        all_datasets["math"] = load_math()
+    if args.dataset in ("all", "bbh"):
+        all_datasets["bbh"] = load_bbh()
+    if args.dataset in ("all", "mmlu_pro"):
+        all_datasets["mmlu_pro"] = load_mmlu_pro()
 
     # Apply limits
     if args.test:
-        teleqna_train = teleqna_train[:3]
-        teleqna_test = teleqna_test[:3]
-        telequad_items = telequad_items[:3]
+        for name in all_datasets:
+            all_datasets[name] = all_datasets[name][:3]
         models_to_run = MODELS[:3]
     else:
         if args.items:
-            teleqna_train = teleqna_train[:args.items]
-            teleqna_test = teleqna_test[:args.items]
-            telequad_items = telequad_items[:args.items]
+            for name in all_datasets:
+                all_datasets[name] = all_datasets[name][:args.items]
         models_to_run = MODELS[:args.models] if args.models else MODELS
 
-    # Load cache if present (reloaded per-model to catch incremental saves)
+    # Dataset config: output file + worker function
+    dataset_config = {
+        "tele":     {"output": OUT_TELE,     "worker": _tele_worker},
+        "math":     {"output": OUT_MATH,     "worker": _math_worker},
+        "bbh":      {"output": OUT_BBH,      "worker": _bbh_worker},
+        "mmlu_pro": {"output": OUT_MMLU_PRO, "worker": _mmlu_pro_worker},
+    }
+
     initial_cache = load_cache()
     if initial_cache:
         cached_models = list(initial_cache.keys())
@@ -522,12 +784,12 @@ def main():
 
         canonical = canonical_model_name(model)
 
-        # Reload cache from disk — captures results saved incrementally in this or prior runs
+        # Reload cache from disk
         cache = load_cache()
 
         # Check if already fully cached
         cached_count = len(cache.get(canonical, {}))
-        total_items = len(teleqna_train) + len(teleqna_test) + len(telequad_items)
+        total_items = sum(len(items) for items in all_datasets.values())
         if cached_count >= total_items:
             print(f"  [CACHE HIT] All {total_items} items already cached — skipping.")
             processed_models.append(canonical)
@@ -540,53 +802,32 @@ def main():
             unavailable_models.append(canonical)
             continue
 
-        # TeleQnA train + test
-        for split, items in [("train", teleqna_train), ("test", teleqna_test)]:
-            # Filter out already-cached query_ids for this model
+        # Evaluate each dataset
+        for ds_name, items in all_datasets.items():
+            cfg = dataset_config[ds_name]
+            cache = load_cache()
             cached_ids = cache.get(canonical, {})
+
             uncached_items = [
-                (idx, item) for idx, item in enumerate(items)
-                if f"teleqna_{split}_{item['global_idx']}" not in cached_ids
+                item for item in items
+                if f"{ds_name}_{item['global_idx']}" not in cached_ids
             ]
             cached_here = len(items) - len(uncached_items)
             if cached_here > 0:
-                print(f"  [CACHE HIT] {cached_here}/{len(items)} TeleQnA {split} items already cached — skipping.")
+                print(f"  [CACHE HIT] {cached_here}/{len(items)} {ds_name} items already cached — skipping.")
             if not uncached_items:
                 continue
 
-            desc = f"  TeleQnA {split}"
-            items_to_eval = [item for _, item in uncached_items]
-            results = process_teleqna(items_to_eval, model, desc, verbose=args.test)
-
-            # Rewrite model name to match models_info.json key
+            results = process_items(
+                uncached_items, model, ds_name.upper(), cfg["worker"], verbose=args.test
+            )
             for r in results:
                 r["model"] = canonical
 
-            # Write to output files
-            append_results(OUT_TELEQNA_ALL, results)
-            if split == "test":
-                append_results(OUT_TELEQNA_TEST, results)
+            append_results(cfg["output"], results)
 
             correct_count = sum(1 for r in results if r["correct"] == 1.0)
-            print(f"  TeleQnA {split}: {correct_count}/{len(results)} correct")
-
-        # TeleQuAD
-        cached_ids = cache.get(canonical, {})
-        uncached_items: List[Tuple[int, Dict]] = [
-            (idx, item) for idx, item in enumerate(telequad_items)
-            if f"telequad_{idx}" not in cached_ids
-        ]
-        cached_here = len(telequad_items) - len(uncached_items)
-        if cached_here > 0:
-            print(f"  [CACHE HIT] {cached_here}/{len(telequad_items)} TeleQuAD items already cached — skipping.")
-        if uncached_items:
-            results = process_telequad(uncached_items, model, verbose=args.test)
-            for r in results:
-                r["model"] = canonical
-            append_results(OUT_TELEQUAD, results)
-
-            correct_count = sum(1 for r in results if r["correct"] == 1.0)
-            print(f"  TeleQuAD: {correct_count}/{len(results)} correct")
+            print(f"  {ds_name.upper()}: {correct_count}/{len(results)} correct")
 
         processed_models.append(canonical)
 
@@ -608,9 +849,8 @@ def main():
 
     print(f"\n{'=' * 70}")
     print("Done! Results written to:")
-    print(f"  {OUT_TELEQNA_ALL}")
-    print(f"  {OUT_TELEQNA_TEST}")
-    print(f"  {OUT_TELEQUAD}")
+    for ds_name in all_datasets:
+        print(f"  {dataset_config[ds_name]['output']}")
 
     if unavailable_models:
         print(f"\n  Unavailable models ({len(unavailable_models)}):")

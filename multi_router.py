@@ -179,17 +179,17 @@ def evaluate_single_model(model_name: str,
 def main():
     parser = argparse.ArgumentParser(description='Multi-model Router')
     parser.add_argument('--dataset', type=str, default=None,
-                        choices=['bbh', 'math', 'mmlu_pro', 'gpqa', 'musr'],
+                        choices=['bbh', 'math', 'mmlu_pro', 'tele', 'gpqa', 'musr'],
                         help='Select the dataset to evaluate (default: all datasets)')
     parser.add_argument('--beta', type=float, nargs='+', default=[0.0, 0.05, 0.1, 0.1018, 0.102, 0.11, 0.15, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0],
                         help='Specify the list of beta values')
     parser.add_argument('--verbose', action='store_true',
                         help='Show detailed model selection distribution')
-    parser.add_argument('--feature_file', type=str, default='data/feature_vectors/ID/data_samples_features.jsonl',
+    parser.add_argument('--feature_file', type=str, default='data/feature_vectors/ID/extracted_dataset_samples_new_merged_features_test.jsonl',
                         help='Path to the feature vectors file')
-    parser.add_argument('--models_file', type=str, default='data/model_data/models_info.json',
+    parser.add_argument('--models_file', type=str, default='data/model_data/unseen_models.json',
                         help='Path to the models info file')
-    parser.add_argument('--results_file', type=str, default='data/model_data/extracted_dataset_samples.jsonl',
+    parser.add_argument('--results_file', type=str, default='data/model_data/extracted_dataset_samples_new_merged.jsonl',
                         help='Path to the extracted dataset samples file')
     args = parser.parse_args()
 
