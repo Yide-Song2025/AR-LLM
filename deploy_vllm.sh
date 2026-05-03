@@ -11,16 +11,18 @@ GPU_UTIL=0.90
 
 # Mapping: served-model-name (what the eval script sends) → HuggingFace model ID
 declare -A MODEL_MAP=(
-    ["maziyarpanahi/calme-3.2-instruct-78b"]="MaziyarPanahi/calme-3.2-instruct-78b"
-    ["qwen/qwen2.5-32b-instruct"]="Qwen/Qwen2.5-32B-Instruct"
-    ["qwen/qwen2.5-14b-instruct"]="Qwen/Qwen2.5-14B-Instruct"
-    ["qwen/qwen2.5-7b-instruct"]="Qwen/Qwen2.5-7B-Instruct"
-    ["qwen/qwen2.5-3b-instruct"]="Qwen/Qwen2.5-3B-Instruct"
-    ["qwen/qwen2.5-1.5b-instruct"]="Qwen/Qwen2.5-1.5B-Instruct"
-    ["qwen/qwen2.5-0.5b-instruct"]="Qwen/Qwen2.5-0.5B-Instruct"
-    ["deepseek/deepseek-r1-distill-qwen-14b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
-    ["deepseek/deepseek-r1-distill-qwen-32b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
-    ["deepseek/deepseek-r1-distill-qwen-7b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    # ["maziyarpanahi/calme-3.2-instruct-78b"]="MaziyarPanahi/calme-3.2-instruct-78b"
+    # ["qwen/qwen2.5-32b-instruct"]="Qwen/Qwen2.5-32B-Instruct"
+    # ["qwen/qwen2.5-14b-instruct"]="Qwen/Qwen2.5-14B-Instruct"
+    # ["qwen/qwen2.5-7b-instruct"]="Qwen/Qwen2.5-7B-Instruct"
+    # ["qwen/qwen2.5-3b-instruct"]="Qwen/Qwen2.5-3B-Instruct"
+    # ["qwen/qwen2.5-1.5b-instruct"]="Qwen/Qwen2.5-1.5B-Instruct"
+    # ["qwen/qwen2.5-0.5b-instruct"]="Qwen/Qwen2.5-0.5B-Instruct"
+    # ["deepseek/deepseek-r1-distill-qwen-14b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
+    # ["deepseek/deepseek-r1-distill-qwen-32b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+    # ["deepseek/deepseek-r1-distill-qwen-7b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+    ["qwen/qwen3-8b"]="Qwen/Qwen3-8B"
+    ["qwen/qwen3-14b"]="Qwen/Qwen3-14B"
 )
 
 VLLM_PID=""
