@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from tqdm import tqdm
 
 from openai import OpenAI, RateLimitError, APIError, BadRequestError
@@ -15,23 +16,35 @@ from datasets import load_dataset, get_dataset_config_names
 OPENROUTER_TO_MODELS_INFO = {
     "qwen/qwen3-8b": {"name":"Qwen/Qwen3-8B", "provider":"alibaba"},
     "qwen/qwen3-14b": {"name":"Qwen/Qwen3-14B", "provider":"alibaba"},
-    "qwen/qwen3-32b": {"name": "Qwen/Qwen3-32B", "provider":"alibaba"},
-    "qwen/qwen3.5-9b": "Qwen/Qwen3.5-9B",
-    "qwen/qwen3.5-27b": {"name": "Qwen/Qwen3.5-27B", "provider":"alibaba"},
-    "qwen/qwen3.5-35b-a3b": "Qwen/Qwen3.5-35B-A3B",
-    "qwen/qwen3.5-122b-a10b": {"name": "Qwen/Qwen3.5-122B-A10B", "provider":"alibaba"},
-    "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
-    "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
-    "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
-    "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
-    "meta-llama/llama-4-scout": "meta-llama/Llama-4-Scout",
-    "google/gemma-4-31b-it": {"name": "google/gemma-4-31B", "provider":"venice/bf16"},
-    "google/gemma-4-26b-a4b-it": {"name": "google/gemma-4-26B-A4B", "provider":"ionstream/bf16"}
+    # "qwen/qwen3-32b": {"name": "Qwen/Qwen3-32B", "provider":"alibaba"},
+    # "qwen/qwen3.5-9b": "Qwen/Qwen3.5-9B",
+    # "qwen/qwen3.5-27b": {"name": "Qwen/Qwen3.5-27B", "provider":"alibaba"},
+    # "qwen/qwen3.5-35b-a3b": "Qwen/Qwen3.5-35B-A3B",
+    # "qwen/qwen3.5-122b-a10b": {"name": "Qwen/Qwen3.5-122B-A10B", "provider":"alibaba"},
+    # "meta-llama/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    # "meta-llama/llama-3.1-8b-instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    # "meta-llama/llama-3.2-3b-instruct": "meta-llama/Llama-3.2-3B-Instruct",
+    # "meta-llama/llama-3.2-1b-instruct": "meta-llama/Llama-3.2-1B-Instruct",
+    # "meta-llama/llama-4-scout": "meta-llama/Llama-4-Scout",
+    # "google/gemma-4-31b-it": "google/gemma-4-31B",
+    # "google/gemma-4-26b-a4b-it": "google/gemma-4-26B-A4B"
 }
 
 MODELS = list(OPENROUTER_TO_MODELS_INFO.keys())
 
-BBH_SUBSETS = None  # populated dynamically by load_bbh()
+BBH_SUBSETS = [
+    'boolean_expressions', 'causal_judgement', 'date_understanding',
+    'disambiguation_qa', 'formal_fallacies',
+    'geometric_shapes', 'hyperbaton', 'logical_deduction_five_objects',
+    'logical_deduction_seven_objects', 'logical_deduction_three_objects',
+    'movie_recommendation', 'navigate',
+    'object_counting', 'penguins_in_a_table', 'reasoning_about_colored_objects',
+    'ruin_names', 'salient_translation_error_detection', 'snarks',
+    'sports_understanding', 'temporal_sequences',
+    'tracking_shuffled_objects_five_objects',
+    'tracking_shuffled_objects_seven_objects',
+    'tracking_shuffled_objects_three_objects', 'web_of_lies'
+]
 
 
 def _get_model_config(openrouter_model: str) -> Tuple[str, Optional[str]]:
@@ -51,15 +64,15 @@ root = 'data'
 # ----------------------------------------------------------------------
 # Output files
 # ----------------------------------------------------------------------
-OUT_TELE     = root + "/model_data/tele_openrouter_results.jsonl"
-OUT_MATH     = root + "/model_data/math_openrouter_results.jsonl"
-OUT_BBH      = root + "/model_data/bbh_openrouter_results.jsonl"
-OUT_MMLU_PRO = root + "/model_data/mmlu_pro_openrouter_results.jsonl"
+OUT_TELE     = root + "/raw_data/tele_openrouter_results.jsonl"
+OUT_MATH     = root + "/raw_data/math_openrouter_results.jsonl"
+OUT_BBH      = root + "/raw_data/bbh_openrouter_results.jsonl"
+OUT_MMLU_PRO = root + "/raw_data/mmlu_pro_openrouter_results.jsonl"
 
 # Temporary cache file for interrupt recovery
-CACHE_FILE = root + "/model_data/openrouter_eval_cache.jsonl"
+CACHE_FILE = root + "/raw_data/openrouter_eval_cache.jsonl"
 
-MAX_WORKERS = 256
+MAX_WORKERS = 512
 
 # ----------------------------------------------------------------------
 # API clients (defaults — can be overridden via --base-url / --api-key)
@@ -284,10 +297,12 @@ def load_tele() -> List[Dict]:
 
 
 def load_math() -> List[Dict]:
-    """Load MATH (competition_math) from HuggingFace."""
+    """Load MATH Level 5 from HuggingFace."""
     ds = load_dataset("qwedsacf/competition_math", split="train")
     items = []
     for idx, row in enumerate(ds):
+        if row.get("level", "") != "Level 5":
+            continue
         answer = extract_math_answer_from_solution(row.get("solution", ""))
         items.append({
             "problem": row["problem"],
@@ -297,16 +312,12 @@ def load_math() -> List[Dict]:
             "type": row.get("type", ""),
             "global_idx": idx,
         })
-    print(f"  Loaded MATH: {len(items)} items")
+    print(f"  Loaded MATH Level 5: {len(items)} items")
     return items
 
 
 def load_bbh() -> List[Dict]:
-    """Load BBH from HuggingFace (all subsets, discovered dynamically)."""
-    global BBH_SUBSETS
-    BBH_SUBSETS = get_dataset_config_names("lukaemon/bbh")
-    print(f"  Found {len(BBH_SUBSETS)} BBH subsets")
-
+    """Load BBH from HuggingFace (predefined subsets)."""
     items = []
     idx = 0
     for subset in BBH_SUBSETS:
@@ -611,12 +622,14 @@ def _mmlu_pro_worker(args: Tuple[Dict, str, bool]) -> Optional[Dict]:
 
 
 def process_items(items: List[Dict], model: str, dataset_name: str,
-                  worker_fn, verbose: bool = False, save_every: int = 10) -> List[Dict]:
+                  worker_fn, verbose: bool = False, save_every: int = 10,
+                  max_workers: int = None, cache_lock: threading.Lock = None) -> List[Dict]:
     """Generic parallel evaluation with incremental cache saving."""
     results: List[Dict] = []
     pending: List[Dict] = []
     args_list = [(item, model, verbose) for item in items]
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    workers = max_workers or MAX_WORKERS
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(worker_fn, args): args for args in args_list}
         for future in tqdm(as_completed(futures), total=len(futures),
                            desc=f"  {dataset_name}", leave=False):
@@ -626,12 +639,20 @@ def process_items(items: List[Dict], model: str, dataset_name: str,
                     results.append(result)
                     pending.append(result)
                     if len(pending) >= save_every:
-                        save_to_cache(pending)
+                        if cache_lock:
+                            with cache_lock:
+                                save_to_cache(pending)
+                        else:
+                            save_to_cache(pending)
                         pending = []
             except Exception as e:
                 print(f"    [ERROR] Worker exception: {e}")
     if pending:
-        save_to_cache(pending)
+        if cache_lock:
+            with cache_lock:
+                save_to_cache(pending)
+        else:
+            save_to_cache(pending)
     return results
 
 
@@ -718,6 +739,8 @@ def main():
                         help="Quick test: 3 models, 3 items per dataset")
     parser.add_argument("--models", type=int, default=None,
                         help="Limit number of models to evaluate")
+    parser.add_argument("--parallel-models", type=int, default=2,
+                        help="Number of models to evaluate concurrently (default: 1)")
     parser.add_argument("--items", type=int, default=None,
                         help="Limit items per dataset")
     parser.add_argument("--dataset", type=str, default="all",
@@ -775,34 +798,26 @@ def main():
 
     unavailable_models: List[str] = []
     processed_models: List[str] = []
+    cache_lock = threading.Lock()
+    parallel = args.parallel_models
+    inner_workers = max(1, MAX_WORKERS // parallel)
 
-    # Process each model
-    for model in models_to_run:
-        print(f"\n{'─' * 70}")
-        print(f"Model: {model}")
-        print(f"{'─' * 70}")
-
+    def _evaluate_model_task(model: str) -> Tuple[str, bool]:
+        """Evaluate a single model on all datasets. Thread-safe."""
         canonical = canonical_model_name(model)
 
-        # Reload cache from disk
         cache = load_cache()
-
-        # Check if already fully cached
         cached_count = len(cache.get(canonical, {}))
         total_items = sum(len(items) for items in all_datasets.values())
         if cached_count >= total_items:
-            print(f"  [CACHE HIT] All {total_items} items already cached — skipping.")
-            processed_models.append(canonical)
-            continue
+            print(f"  [{model}] All {total_items} items cached — skipping.")
+            return canonical, True
 
-        # Check availability
-        print("  Checking model availability...")
+        print(f"  Checking {model} availability...")
         if not check_model_available(model):
-            print(f"  [SKIP] Model unavailable on OpenRouter.")
-            unavailable_models.append(canonical)
-            continue
+            print(f"  [{model}] Unavailable — skipping.")
+            return canonical, False
 
-        # Evaluate each dataset
         for ds_name, items in all_datasets.items():
             cfg = dataset_config[ds_name]
             cache = load_cache()
@@ -814,22 +829,41 @@ def main():
             ]
             cached_here = len(items) - len(uncached_items)
             if cached_here > 0:
-                print(f"  [CACHE HIT] {cached_here}/{len(items)} {ds_name} items already cached — skipping.")
+                print(f"  [{model}] {cached_here}/{len(items)} {ds_name} cached — skipping.")
             if not uncached_items:
                 continue
 
             results = process_items(
-                uncached_items, model, ds_name.upper(), cfg["worker"], verbose=args.test
+                uncached_items, model, f"{model}/{ds_name.upper()}", cfg["worker"],
+                verbose=args.test, max_workers=inner_workers, cache_lock=cache_lock,
             )
             for r in results:
                 r["model"] = canonical
 
-            append_results(cfg["output"], results)
-
             correct_count = sum(1 for r in results if r["correct"] == 1.0)
-            print(f"  {ds_name.upper()}: {correct_count}/{len(results)} correct")
+            print(f"  [{model}] {ds_name.upper()}: {correct_count}/{len(results)} correct")
 
-        processed_models.append(canonical)
+        return canonical, True
+
+    if parallel <= 1:
+        for model in models_to_run:
+            print(f"\n{'─' * 70}")
+            print(f"Model: {model}")
+            print(f"{'─' * 70}")
+            canonical, available = _evaluate_model_task(model)
+            (processed_models if available else unavailable_models).append(canonical)
+    else:
+        print(f"\n  Parallel mode: {parallel} models concurrently "
+              f"({inner_workers} workers/model)")
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = {
+                executor.submit(_evaluate_model_task, model): model
+                for model in models_to_run
+            }
+            for future in tqdm(as_completed(futures), total=len(futures),
+                               desc="Models", leave=False):
+                canonical, available = future.result()
+                (processed_models if available else unavailable_models).append(canonical)
 
     # Rebuild output files from cache to ensure consistency
     if processed_models:

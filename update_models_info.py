@@ -67,13 +67,15 @@ def update_models_info(models_info_path, data_file):
         bbh_acc = accuracies.get('bbh', 0.0)
         math_acc = accuracies.get('math', 0.0)
         mmlu_pro_acc = accuracies.get('mmlu_pro', 0.0)
+        tele_acc = accuracies.get('tele', 0.0)
         
-        feature_vector = [bbh_acc, math_acc, mmlu_pro_acc]
+        feature_vector = [bbh_acc, math_acc, mmlu_pro_acc, tele_acc]
         
         if model_name in existing_models:
             existing_models[model_name]['bbh_acc'] = bbh_acc
             existing_models[model_name]['math_acc'] = math_acc
             existing_models[model_name]['mmlu_pro_acc'] = mmlu_pro_acc
+            existing_models[model_name]['tele_acc'] = tele_acc
             existing_models[model_name]['feature_vector'] = feature_vector
             updated_count += 1
         else:
@@ -82,6 +84,7 @@ def update_models_info(models_info_path, data_file):
                 'bbh_acc': bbh_acc,
                 'math_acc': math_acc,
                 'mmlu_pro_acc': mmlu_pro_acc,
+                'tele_acc': tele_acc,
                 'feature_vector': feature_vector,
                 'co2_cost': None,
                 'base_model': None
@@ -107,6 +110,7 @@ def update_models_info(models_info_path, data_file):
         print(f"    BBH acc: {model['bbh_acc']:.4f}")
         print(f"    Math acc: {model['math_acc']:.4f}")
         print(f"    MMLU Pro acc: {model['mmlu_pro_acc']:.4f}")
+        print(f"    Tele acc: {model['tele_acc']:.4f}")
         print(f"    Feature vector: {model['feature_vector']}")
 
 if __name__ == "__main__":

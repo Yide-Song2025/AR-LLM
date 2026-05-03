@@ -26,11 +26,11 @@ OPENROUTER_TO_MODELS_INFO = {
 }
 
 FILES = [
-    "data/model_data/tele_openrouter_results.jsonl",
-    "data/model_data/math_openrouter_results.jsonl",
-    "data/model_data/bbh_openrouter_results.jsonl",
-    "data/model_data/mmlu_pro_openrouter_results.jsonl",
-    "data/model_data/openrouter_eval_cache.jsonl"
+    "data/raw_data/tele_openrouter_results.jsonl",
+    "data/raw_data/math_openrouter_results.jsonl",
+    "data/raw_data/bbh_openrouter_results.jsonl",
+    "data/raw_data/mmlu_pro_openrouter_results.jsonl",
+    "data/raw_data/openrouter_eval_cache.jsonl"
 ]
 
 
