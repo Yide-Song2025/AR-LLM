@@ -459,7 +459,7 @@ def main():
     )
     parser.add_argument("--model", type=str, default=None,
                         help="Run a single model (default: read from models.txt)")
-    parser.add_argument("--samples-per-dataset", type=int, default=100)
+    parser.add_argument("--samples-per-dataset", type=int, default=20)
     parser.add_argument("--datasets", type=str, default="all",
                         help="bbh,math,mmlu_pro,teleqna,telequad (default: all)")
     parser.add_argument("--tp", type=int, default=1)

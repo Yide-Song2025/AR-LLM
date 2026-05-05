@@ -3,9 +3,9 @@ model_checkpoints/
 Temp/
 archive/
 data/model_data/
-CLAUDE.md
 .claude/
 .remember/
+CLAUDE.md
 
 *.csv
 *.jsonl
