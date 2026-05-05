@@ -8,7 +8,13 @@
       "Bash(command -v vllm)",
       "Bash(vllm --version)",
       "Bash(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)",
-      "Bash(dir \"E:\\\\Files\\\\GraduateStudies\\\\Research\\\\Survey\\\\literature_on_mm_routing\\\\code\\\\AR-LLM\\\\\" /a)"
+      "Bash(dir \"E:\\\\Files\\\\GraduateStudies\\\\Research\\\\Survey\\\\literature_on_mm_routing\\\\code\\\\AR-LLM\\\\\" /a)",
+      "Bash(conda run *)",
+      "Bash(conda activate *)",
+      "Bash(where python *)",
+      "Bash(dir *)",
+      "Bash(\"E:\\\\Application\\\\anaconda3\\\\envs\\\\noesis\\\\python.exe\" compare_math_datasets.py)",
+      "Bash(del *)"
     ]
   }
 }

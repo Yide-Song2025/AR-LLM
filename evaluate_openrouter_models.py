@@ -14,7 +14,7 @@ from datasets import load_dataset, get_dataset_config_names
 
 # Map OpenRouter model names to their models_info.json keys
 OPENROUTER_TO_MODELS_INFO = {
-    "qwen/qwen3-8b": {"name":"Qwen/Qwen3-8B", "provider":"alibaba"},
+    # "qwen/qwen3-8b": {"name":"Qwen/Qwen3-8B", "provider":"alibaba"},
     "qwen/qwen3-14b": {"name":"Qwen/Qwen3-14B", "provider":"alibaba"},
     # "qwen/qwen3-32b": {"name": "Qwen/Qwen3-32B", "provider":"alibaba"},
     # "qwen/qwen3.5-9b": "Qwen/Qwen3.5-9B",
@@ -72,7 +72,7 @@ OUT_MMLU_PRO = root + "/raw_data/mmlu_pro_openrouter_results.jsonl"
 # Temporary cache file for interrupt recovery
 CACHE_FILE = root + "/raw_data/openrouter_eval_cache.jsonl"
 
-MAX_WORKERS = 512
+MAX_WORKERS = 16
 
 # ----------------------------------------------------------------------
 # API clients (defaults — can be overridden via --base-url / --api-key)
@@ -739,7 +739,7 @@ def main():
                         help="Quick test: 3 models, 3 items per dataset")
     parser.add_argument("--models", type=int, default=None,
                         help="Limit number of models to evaluate")
-    parser.add_argument("--parallel-models", type=int, default=2,
+    parser.add_argument("--parallel-models", type=int, default=1,
                         help="Number of models to evaluate concurrently (default: 1)")
     parser.add_argument("--items", type=int, default=None,
                         help="Limit items per dataset")

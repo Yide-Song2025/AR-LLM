@@ -4,6 +4,8 @@ Temp/
 archive/
 data/model_data/
 CLAUDE.md
+.claude/
+.remember/
 
 *.csv
 *.jsonl
